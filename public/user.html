@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIA 101 Lab 3 - User Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #eef4ff; padding: 30px; }
+    .container {
+      max-width: 800px;
+      margin: auto;
+      background: white;
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    button {
+      margin: 5px;
+      padding: 10px 14px;
+      background: #123c8c;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover { background: #0d2d6b; }
+    #message { min-height: 1.2em; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>User Dashboard</h1>
+    <p id="welcome">Loading profile...</p>
+    <h2>My Profile</h2>
+    <p id="profile"></p>
+    <p id="message" role="status"></p>
+    <button id="loadProfile" type="button">Refresh profile</button>
+    <button id="logout" type="button">Logout</button>
+  </main>
+
+  <script>
+    const token = localStorage.getItem('token');
+    const welcome = document.getElementById('welcome');
+    const profileElement = document.getElementById('profile');
+    const message = document.getElementById('message');
+
+    function clearSession() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+    }
+
+    async function loadProfile() {
+      message.textContent = '';
+      const response = await fetch('/api/profile', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        clearSession();
+        window.location.replace('/login.html');
+        return;
+      }
+
+      const user = await response.json();
+      if (user.role === 'admin') {
+        window.location.replace('/admin.html');
+        return;
+      }
+      if (user.role !== 'user') {
+        clearSession();
+        window.location.replace('/login.html');
+        return;
+      }
+
+      welcome.textContent = `Welcome, ${user.username}`;
+      profileElement.textContent = `ID: ${user.id} | Username: ${user.username} | Role: ${user.role}`;
+    }
+
+    document.getElementById('loadProfile').addEventListener('click', () => {
+      loadProfile().catch(error => {
+        message.textContent = error.message;
+      });
+    });
+
+    document.getElementById('logout').addEventListener('click', () => {
+      clearSession();
+      window.location.replace('/login.html');
+    });
+
+    if (!token) {
+      window.location.replace('/login.html');
+    } else {
+      loadProfile().catch(error => {
+        message.textContent = error.message;
+      });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIA 101 Lab 3 - Admin Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #eef4ff; padding: 30px; }
+    .container {
+      max-width: 800px;
+      margin: auto;
+      background: white;
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    button {
+      margin: 5px;
+      padding: 10px 14px;
+      background: #123c8c;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover { background: #0d2d6b; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 10px; border-bottom: 1px solid #ddd; text-align: left; }
+    #message { min-height: 1.2em; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>Admin Dashboard</h1>
+    <p>View and manage registered users.</p>
+    <button id="logout" type="button">Logout</button>
+    <p id="message" role="status"></p>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Username</th><th>Role</th><th>Actions</th></tr>
+      </thead>
+      <tbody id="users"></tbody>
+    </table>
+  </main>
+
+  <script>
+    const token = localStorage.getItem('token');
+    const message = document.getElementById('message');
+    const usersBody = document.getElementById('users');
+
+    function clearSession() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+    }
+
+    function showUsers(users) {
+      usersBody.replaceChildren();
+
+      users.forEach(user => {
+        const row = document.createElement('tr');
+        const idCell = document.createElement('td');
+        const usernameCell = document.createElement('td');
+        const roleCell = document.createElement('td');
+        const actionCell = document.createElement('td');
+        const deleteButton = document.createElement('button');
+
+        idCell.textContent = user.id;
+        usernameCell.textContent = user.username;
+        roleCell.textContent = user.role;
+        deleteButton.textContent = 'Delete';
+        deleteButton.type = 'button';
+        deleteButton.addEventListener('click', () => deleteUser(user.id));
+        actionCell.append(deleteButton);
+        row.append(idCell, usernameCell, roleCell, actionCell);
+        usersBody.append(row);
+      });
+    }
+
+    async function loadUsers() {
+      const response = await fetch('/api/users', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.status === 401) {
+        clearSession();
+        window.location.replace('/login.html');
+        return;
+      }
+      if (response.status === 403) {
+        window.location.replace('/user.html');
+        return;
+      }
+      if (!response.ok) throw new Error('Could not load users.');
+
+      showUsers(await response.json());
+    }
+
+    async function deleteUser(id) {
+      message.textContent = '';
+
+      try {
+        const response = await fetch(`/api/users/${id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (response.status === 401) {
+          clearSession();
+          window.location.replace('/login.html');
+          return;
+        }
+        if (response.status === 403) {
+          window.location.replace('/user.html');
+          return;
+        }
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Could not delete user.');
+
+        await loadUsers();
+      } catch (error) {
+        message.textContent = error.message;
+      }
+    }
+
+    document.getElementById('logout').addEventListener('click', () => {
+      clearSession();
+      window.location.replace('/login.html');
+    });
+
+    if (!token) {
+      window.location.replace('/login.html');
+    } else {
+      loadUsers().catch(error => {
+        message.textContent = error.message;
+      });
+    }
+  </script>
+</body>
+</html>
