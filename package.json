@@ -1,5 +1,5 @@
 {
-  "name": "sia101-lab3",
+  "name": "role-login-lab",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -11,9 +11,10 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "bcryptjs": "^3.0.3",
-    "cors": "^2.8.6",
-    "express": "^5.2.1",
-    "jsonwebtoken": "^9.0.3"
+    "bcrypt": "^6.0.0",
+    "express": "^5.2.1"
+  },
+  "allowScripts": {
+    "bcrypt@6.0.0": true
   }
 }

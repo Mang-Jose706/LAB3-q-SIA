@@ -1,156 +1,176 @@
 const express = require('express');
-const cors = require('cors');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-
+const path = require('path');
+const bcrypt = require('bcrypt');
 const app = express();
-const PORT = 3000;
-const JWT_SECRET = 'lab3-secret-change-in-production';
 
-app.use(cors());
+// Middleware to parse JSON request bodies
 app.use(express.json());
-app.use(express.static('public'));
 
+// Serve the public folder (login.html, dashboards, css)
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ---------- In-memory "database" ----------
+// Starts EMPTY. Populate it via POST /api/users from Postman.
 let users = [];
 let nextId = 1;
 
-users.push({
-  id: nextId++,
-  username: 'admin',
-  password: bcrypt.hashSync('admin123', 10),
-  role: 'admin'
+// ---------- Helpers ----------
+const findUserById = (id) => users.find(u => u.id === id);
+
+const findUserByEmail = (email) =>
+  users.find(u => u.email.toLowerCase() === String(email).toLowerCase());
+
+// Strip password before sending to the client
+const sanitizeUser = (user) => {
+  const { password, ...safe } = user;
+  return safe;
+};
+
+// ---------- User CRUD Routes ----------
+
+// GET /api/users - List all users
+app.get('/api/users', (req, res) => {
+  res.json(users.map(sanitizeUser));
 });
 
-function auth(req, res, next) {
-  const header = req.headers.authorization;
-  if (!header) return res.status(401).json({ message: 'No token provided' });
+// POST /api/users - Create a new user
+app.post('/api/users', async (req, res) => {
+  const { name, email, password, role } = req.body;
 
-  const token = header.split(' ')[1];
-  try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch (error) {
-    return res.status(403).json({ message: 'Invalid token' });
-  }
-}
-
-function adminOnly(req, res, next) {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ message: 'Admin only' });
-  }
-  next();
-}
-
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'REST API is running' });
-});
-
-app.get('/api/users', auth, adminOnly, (req, res) => {
-  const safeUsers = users.map(user => ({
-    id: user.id,
-    username: user.username,
-    role: user.role
-  }));
-  res.json(safeUsers);
-});
-
-app.get('/api/users/:id', auth, (req, res) => {
-  const id = Number(req.params.id);
-  const user = users.find(u => u.id === id);
-
-  if (!user) return res.status(404).json({ message: 'User not found' });
-  if (req.user.id !== user.id && req.user.role !== 'admin') {
-    return res.status(403).json({ message: 'Forbidden' });
+  // Basic validation
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Name, email, and password are required.' });
   }
 
-  res.json({ id: user.id, username: user.username, role: user.role });
-});
-
-app.post('/api/register', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ message: 'Username and password required' });
+  // Simple email format check
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ error: 'Invalid email format.' });
   }
 
-  const existingUser = users.find(u => u.username === username);
-  if (existingUser) {
-    return res.status(409).json({ message: 'Username already exists' });
+  // Prevent duplicate accounts (case-insensitive)
+  if (findUserByEmail(email)) {
+    return res.status(409).json({ error: 'Email already registered.' });
   }
+
+  // Normalize role: 'admin' | 'staff' | 'user'
+  let normalizedRole = 'user';
+  if (role === 'admin') normalizedRole = 'admin';
+  else if (role === 'staff') normalizedRole = 'staff';
 
   const hashedPassword = await bcrypt.hash(password, 10);
-  const newUser = { id: nextId++, username, password: hashedPassword, role: 'user' };
-  users.push(newUser);
+  const newUser = {
+    id: nextId++,
+    name,
+    email,
+    password: hashedPassword,
+    role: normalizedRole
+  };
 
-  res.status(201).json({
-    message: 'User registered successfully',
-    user: { id: newUser.id, username: newUser.username, role: newUser.role }
-  });
+  users.push(newUser);
+  res.status(201).json(sanitizeUser(newUser));
 });
 
+// GET /api/users/:id - Get user by ID
+app.get('/api/users/:id', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    return res.status(400).json({ error: 'Invalid user ID.' });
+  }
+
+  const user = findUserById(id);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+
+  res.json(sanitizeUser(user));
+});
+
+// PUT /api/users/:id - Update user
+app.put('/api/users/:id', async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    return res.status(400).json({ error: 'Invalid user ID.' });
+  }
+
+  const { name, email, password, role } = req.body;
+
+  if (!name || !email) {
+    return res.status(400).json({ error: 'Name and email are required.' });
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ error: 'Invalid email format.' });
+  }
+
+  const user = findUserById(id);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+
+  const existing = findUserByEmail(email);
+  if (existing && existing.id !== id) {
+    return res.status(409).json({ error: 'Email already registered.' });
+  }
+
+  user.name = name;
+  user.email = email;
+  if (password) user.password = await bcrypt.hash(password, 10);
+
+  if (role === 'admin') user.role = 'admin';
+  else if (role === 'staff') user.role = 'staff';
+  else if (role === 'user') user.role = 'user';
+
+  res.json(sanitizeUser(user));
+});
+
+// DELETE /api/users/:id - Delete user
+app.delete('/api/users/:id', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    return res.status(400).json({ error: 'Invalid user ID.' });
+  }
+
+  const index = users.findIndex(u => u.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+
+  users.splice(index, 1);
+  res.status(204).send();
+});
+
+// ---------- Login Route ----------
 app.post('/api/login', async (req, res) => {
-  const { username, password } = req.body;
-  const user = users.find(u => u.username === username);
+  const { email, password } = req.body;
 
-  if (!user) return res.status(401).json({ message: 'Invalid credentials' });
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required.' });
+  }
 
-  const isMatch = await bcrypt.compare(password, user.password);
-  if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
+  const user = findUserByEmail(email);
 
-  const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role },
-    JWT_SECRET,
-    { expiresIn: '1h' }
-  );
+  // Same generic message for both cases (don't leak which one failed)
+  if (!user || !(await bcrypt.compare(password, user.password))) {
+    return res.status(401).json({ error: 'Invalid email or password.' });
+  }
+
+  // Server decides where the client should go, based on role
+  let redirectTo = '/user.html';
+  if (user.role === 'admin') redirectTo = '/admin.html';
+  else if (user.role === 'staff') redirectTo = '/staff.html';
 
   res.json({
     message: 'Login successful',
-    token,
-    user: { id: user.id, username: user.username, role: user.role }
+    user: sanitizeUser(user),
+    redirectTo
   });
 });
 
-app.put('/api/users/:id', auth, async (req, res) => {
-  const id = Number(req.params.id);
-  const user = users.find(u => u.id === id);
-
-  if (!user) return res.status(404).json({ message: 'User not found' });
-  if (req.user.id !== user.id && req.user.role !== 'admin') {
-    return res.status(403).json({ message: 'Forbidden' });
-  }
-
-  const { username, password, role } = req.body;
-  if (username) user.username = username;
-  if (password) user.password = await bcrypt.hash(password, 10);
-  if (role && req.user.role === 'admin') user.role = role;
-
-  res.json({
-    message: 'User updated successfully',
-    user: { id: user.id, username: user.username, role: user.role }
-  });
-});
-
-app.delete('/api/users/:id', auth, adminOnly, (req, res) => {
-  const id = Number(req.params.id);
-  const index = users.findIndex(u => u.id === id);
-
-  if (index === -1) return res.status(404).json({ message: 'User not found' });
-
-  const deletedUser = users.splice(index, 1)[0];
-  res.json({
-    message: 'User deleted successfully',
-    user: { id: deletedUser.id, username: deletedUser.username }
-  });
-});
-
-app.get('/api/profile', auth, (req, res) => {
-  const user = users.find(u => u.id === req.user.id);
-  res.json({ id: user.id, username: user.username, role: user.role });
-});
-
-app.get('/', (req, res) => {
-  res.redirect('/login.html');
-});
-
+// ---------- Start Server ----------
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Login page: http://localhost:${PORT}/login.html`);
 });
