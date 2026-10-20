@@ -1,16 +1,12 @@
 const express = require('express');
 const path = require('path');
-const bcrypt = require('bcrypt');
 const app = express();
 
-// Middleware to parse JSON request bodies
+// ---------- Middleware ----------
 app.use(express.json());
-
-// Serve the public folder (login.html, dashboards, css)
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------- In-memory "database" ----------
-// Starts EMPTY. Populate it via POST /api/users from Postman.
 let users = [];
 let nextId = 1;
 
@@ -20,94 +16,78 @@ const findUserById = (id) => users.find(u => u.id === id);
 const findUserByEmail = (email) =>
   users.find(u => u.email.toLowerCase() === String(email).toLowerCase());
 
-// Strip password before sending to the client
 const sanitizeUser = (user) => {
   const { password, ...safe } = user;
   return safe;
 };
 
-// ---------- User CRUD Routes ----------
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// GET /api/users - List all users
+// ============================================================
+// USER CRUD ROUTES
+// ============================================================
+
+// GET /api/users — list all users (no passwords)
 app.get('/api/users', (req, res) => {
   res.json(users.map(sanitizeUser));
 });
 
-// POST /api/users - Create a new user
-app.post('/api/users', async (req, res) => {
+// POST /api/users — admin creates a user with any role
+app.post('/api/users', (req, res) => {
   const { name, email, password, role } = req.body;
 
-  // Basic validation
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'Name, email, and password are required.' });
   }
-
-  // Simple email format check
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
     return res.status(400).json({ error: 'Invalid email format.' });
   }
-
-  // Prevent duplicate accounts (case-insensitive)
   if (findUserByEmail(email)) {
     return res.status(409).json({ error: 'Email already registered.' });
   }
 
-  // Normalize role: 'admin' | 'staff' | 'user'
   let normalizedRole = 'user';
   if (role === 'admin') normalizedRole = 'admin';
   else if (role === 'staff') normalizedRole = 'staff';
 
-  const hashedPassword = await bcrypt.hash(password, 10);
   const newUser = {
     id: nextId++,
     name,
     email,
-    password: hashedPassword,
+    password, // plain text — DEV ONLY
     role: normalizedRole
   };
-
   users.push(newUser);
   res.status(201).json(sanitizeUser(newUser));
 });
 
-// GET /api/users/:id - Get user by ID
+// GET /api/users/:id — get one user
 app.get('/api/users/:id', (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) {
-    return res.status(400).json({ error: 'Invalid user ID.' });
-  }
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid user ID.' });
 
   const user = findUserById(id);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found.' });
-  }
+  if (!user) return res.status(404).json({ error: 'User not found.' });
 
   res.json(sanitizeUser(user));
 });
 
-// PUT /api/users/:id - Update user
-app.put('/api/users/:id', async (req, res) => {
+// PUT /api/users/:id — update a user (admin)
+app.put('/api/users/:id', (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) {
-    return res.status(400).json({ error: 'Invalid user ID.' });
-  }
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid user ID.' });
 
   const { name, email, password, role } = req.body;
 
   if (!name || !email) {
     return res.status(400).json({ error: 'Name and email are required.' });
   }
-
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
     return res.status(400).json({ error: 'Invalid email format.' });
   }
 
   const user = findUserById(id);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found.' });
-  }
+  if (!user) return res.status(404).json({ error: 'User not found.' });
 
   const existing = findUserByEmail(email);
   if (existing && existing.id !== id) {
@@ -116,7 +96,7 @@ app.put('/api/users/:id', async (req, res) => {
 
   user.name = name;
   user.email = email;
-  if (password) user.password = await bcrypt.hash(password, 10);
+  if (password) user.password = password;
 
   if (role === 'admin') user.role = 'admin';
   else if (role === 'staff') user.role = 'staff';
@@ -125,24 +105,56 @@ app.put('/api/users/:id', async (req, res) => {
   res.json(sanitizeUser(user));
 });
 
-// DELETE /api/users/:id - Delete user
+// DELETE /api/users/:id — delete a user
 app.delete('/api/users/:id', (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) {
-    return res.status(400).json({ error: 'Invalid user ID.' });
-  }
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid user ID.' });
 
   const index = users.findIndex(u => u.id === id);
-  if (index === -1) {
-    return res.status(404).json({ error: 'User not found.' });
-  }
+  if (index === -1) return res.status(404).json({ error: 'User not found.' });
 
   users.splice(index, 1);
   res.status(204).send();
 });
 
-// ---------- Login Route ----------
-app.post('/api/login', async (req, res) => {
+// ============================================================
+// PUBLIC REGISTRATION
+// ============================================================
+app.post('/api/register', (req, res) => {
+  const { name, email, password } = req.body;
+
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Name, email, and password are required.' });
+  }
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ error: 'Invalid email format.' });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+  }
+  if (findUserByEmail(email)) {
+    return res.status(409).json({ error: 'Email already registered.' });
+  }
+
+  const newUser = {
+    id: nextId++,
+    name,
+    email,
+    password,
+    role: 'user' // forced — clients cannot self-assign admin/staff
+  };
+
+  users.push(newUser);
+  res.status(201).json({
+    message: 'Registration successful',
+    user: sanitizeUser(newUser)
+  });
+});
+
+// ============================================================
+// LOGIN
+// ============================================================
+app.post('/api/login', (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
@@ -151,12 +163,11 @@ app.post('/api/login', async (req, res) => {
 
   const user = findUserByEmail(email);
 
-  // Same generic message for both cases (don't leak which one failed)
-  if (!user || !(await bcrypt.compare(password, user.password))) {
+  // Same generic message — don't reveal which failed
+  if (!user || user.password !== password) {
     return res.status(401).json({ error: 'Invalid email or password.' });
   }
 
-  // Server decides where the client should go, based on role
   let redirectTo = '/user.html';
   if (user.role === 'admin') redirectTo = '/admin.html';
   else if (user.role === 'staff') redirectTo = '/staff.html';
@@ -168,9 +179,59 @@ app.post('/api/login', async (req, res) => {
   });
 });
 
-// ---------- Start Server ----------
+// ============================================================
+// PROFILE UPDATE (self-service)
+// ============================================================
+app.put('/api/profile/:id', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid user ID.' });
+
+  const user = findUserById(id);
+  if (!user) return res.status(404).json({ error: 'User not found.' });
+
+  const { name, email, currentPassword, newPassword } = req.body;
+
+  if (!name || !email) {
+    return res.status(400).json({ error: 'Name and email are required.' });
+  }
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ error: 'Invalid email format.' });
+  }
+
+  const existing = findUserByEmail(email);
+  if (existing && existing.id !== id) {
+    return res.status(409).json({ error: 'Email already registered.' });
+  }
+
+  // Password change requires current password verification
+  if (newPassword) {
+    if (!currentPassword) {
+      return res.status(400).json({ error: 'Current password is required to set a new password.' });
+    }
+    if (user.password !== currentPassword) {
+      return res.status(401).json({ error: 'Current password is incorrect.' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+    }
+    user.password = newPassword;
+  }
+
+  user.name = name;
+  user.email = email;
+
+  res.json({
+    message: 'Profile updated successfully',
+    user: sanitizeUser(user)
+  });
+});
+
+// ============================================================
+// START SERVER
+// ============================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`Login page: http://localhost:${PORT}/login.html`);
+  console.log(`Login page:    http://localhost:${PORT}/login.html`);
+  console.log(`Register page: http://localhost:${PORT}/register.html`);
 });

@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sign In - Role-Based Lab</title>
+  <title>Sign In — Role-Based Lab</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body class="centered">
   <div class="card">
     <h1>Sign In</h1>
-    <p class="muted">Use an account created via Postman</p>
+    <p class="muted">Use an account created via the register page or Postman.</p>
 
     <form id="loginForm" autocomplete="off">
       <label>
@@ -24,6 +24,10 @@
     </form>
 
     <p id="msg" class="msg"></p>
+
+    <p class="muted" style="margin-top:1rem;text-align:center;">
+      Don't have an account? <a href="/register.html">Register here</a>
+    </p>
 
     <div class="hint">
       <strong>No accounts yet?</strong>
@@ -46,7 +50,6 @@
       const email = document.getElementById('email').value.trim();
       const password = document.getElementById('password').value;
 
-      // Client-side validation
       if (!email.includes('@')) {
         msg.textContent = 'Please enter a valid email address.';
         msg.classList.add('error');
@@ -73,12 +76,9 @@
           return;
         }
 
-        // Save the logged-in user for the dashboard pages
         sessionStorage.setItem('currentUser', JSON.stringify(data.user));
-
-        // Follow the server's redirect decision
         window.location.href = data.redirectTo;
-      } catch (err) {
+      } catch {
         msg.textContent = 'Cannot reach the server. Is it running?';
         msg.classList.add('error');
       }

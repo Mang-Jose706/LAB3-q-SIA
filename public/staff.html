@@ -10,7 +10,10 @@
   <div class="container">
     <header class="topbar">
       <h1>Staff Dashboard</h1>
-      <button id="logoutBtn" class="btn danger">Logout</button>
+      <div>
+        <button id="profileBtn" class="btn">My Profile</button>
+        <button id="logoutBtn" class="btn danger">Logout</button>
+      </div>
     </header>
 
     <section class="card">
@@ -42,6 +45,10 @@
     document.getElementById('logoutBtn').addEventListener('click', () => {
       sessionStorage.removeItem('currentUser');
       window.location.href = '/login.html';
+    });
+
+    document.getElementById('profileBtn').addEventListener('click', () => {
+      window.location.href = '/profile.html';
     });
   </script>
 </body>
